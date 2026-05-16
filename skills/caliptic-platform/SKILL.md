@@ -1,161 +1,161 @@
 ---
 name: caliptic-platform
-description: Caliptic ITSM platformunun bütüncül kullanım rehberi. Bu skill'i bir agent'a verirsen — agent Caliptic'in domain model'ini (issues, changes, releases, problems, contracts, CMDB, sprints), ITIL4 hizmet değer akışını (incident → problem → change → release → PIR → improvement), modüller arası bağlantıları, API endpoint'lerini ve agent davranış kurallarını eksiksiz bilir. Default supervisor'a bağlanmak için tasarlandı — workspace genelinde her görevde geçerli ortak bilgi tabanı. Issue oluşturma, RCA yazma, change request açma, release scope yönetimi, PIR submit, CSI improvement spawn etme, sözleşme analizi gibi işleri Caliptic'in API'leri ve mimari ilkeleriyle yapar.
+description: Comprehensive operating guide for the Caliptic ITSM platform. Attach this skill to an agent and it gains end-to-end knowledge of Caliptic's domain model (issues, changes, releases, problems, contracts, CMDB, sprints), the ITIL4 service value chain (incident → problem → change → release → PIR → improvement), the junction relationships that wire those modules together, the REST API surface, and the behavioural rules expected of agents acting as first-class teammates. Designed to bind to the workspace's default supervisor — a shared knowledge base every default agent inherits. Equips the agent to triage incidents, write RCAs, raise change requests, manage release scope, submit PIRs, spawn CSI improvements, analyse contracts, and operate inside Caliptic's API and architectural conventions.
 ---
 
-# Caliptic ITSM Platform — Agent Rehberi
+# Caliptic ITSM Platform — Agent Operating Guide
 
-Bu skill bir AI agent'ın Caliptic platformunda **first-class teammate** olarak çalışması için gereken her şeyi içerir. Agent issue'lara atanır, yorum yazar, status değiştirir, ilişkili kayıt açar; bunu yaparken **ITIL4 disiplinini** ve Caliptic'in mimari ilkelerini gözetir.
+This skill gives an AI agent everything it needs to act as a **first-class teammate** inside Caliptic. Agents are assigned to issues, leave comments, change status, and create related records — all while honouring **ITIL4 discipline** and Caliptic's architectural rules.
 
-## 1. Caliptic Nedir?
+## 1. What is Caliptic?
 
-**AI-native ITSM platformu** — Linear/Jira benzeri ama AI agent'lar first-class. Türk ITIL4 ekosistemine yönelik kurulmuş, çok kiracılı (multi-tenant) SaaS + on-premise. Her veri sorgusu `workspace_id` filtreli; member/admin/owner rol modeli.
+**An AI-native ITSM platform** — Linear/Jira-shaped but with AI agents as first-class citizens. Built for ITIL4-aligned operations, multi-tenant SaaS + on-premise. Every query is filtered by `workspace_id`; the role model is member/admin/owner.
 
-**Temel kavramlar:**
-- **Workspace** — kiracı kapsamı, tüm verinin etrafında dönen bağlam (`X-Workspace-Slug` veya `X-Workspace-ID` header'ı ile bağlanır).
-- **Issue** — temel iş birimi; tipi (`issue_type`) belirler: `task`, `incident`, `problem`, `change`, `service_request`, `release`. Aynı tablo polymorphic.
-- **Agent** — AI teammate. İnsan member gibi assignee olabilir, comment atabilir, status değiştirebilir. `assignee_type='agent'` + `assignee_id=<agent.id>`.
-- **Project** — issue gruplama; agent erişimi `project_access` ile sınırlandırılabilir (private projects).
-- **Sprint** — proje altında zaman kutusu; ITIL4 release scope'undan farklı (sprint = takım iterasyon, release = production deploy).
+**Core concepts:**
+- **Workspace** — tenant scope, the boundary every piece of data revolves around (bound via `X-Workspace-Slug` or `X-Workspace-ID` header).
+- **Issue** — the atomic unit of work; its `issue_type` decides shape: `task`, `incident`, `problem`, `change`, `service_request`, `release`. One polymorphic table.
+- **Agent** — an AI teammate. Can be assignee just like a human member; can comment, change status, react. `assignee_type='agent'` + `assignee_id=<agent.id>`.
+- **Project** — issue grouping; agent access can be constrained per project (`project_access`).
+- **Sprint** — time-boxed iteration inside a project; distinct from an ITIL4 release (sprint = team cadence, release = production deploy).
 
-## 2. ITIL4 Hizmet Değer Akışı (Loop)
+## 2. The ITIL4 Service Value Loop
 
-Caliptic'in en kritik özelliği: modüller fiziksel olarak birbirine bağlıdır (migration 105 ile gelen junction tabloları):
+Caliptic's defining feature: modules are physically wired together (via migration 105's junction tables):
 
 ```
 [Incident] ──┐
-[Problem]  ──┤── RCA tamamlandı ──▶ [Change Request (RFC)]
+[Problem]  ──┤── RCA complete ───▶ [Change Request (RFC)]
              │                              │
-             │                       CAB Review (cab_review tablosu)
+             │                       CAB Review (cab_review)
              │                              ▼
              │                       Freeze Window check
              │                              ▼
              │                       Approved → in_progress
              │                              │
              ▼                              ▼
-         (1..N changes)                    │
-                                           ▼
+        (1..N changes)                      │
+                                            ▼
                                     [Release Package]
                                     ├ Build status
                                     ├ Deploy status
                                     ├ Rollback plan
-                                    ▼
+                                            ▼
                               Deploy + Production
-                                    │
-                                    ▼
+                                            │
+                                            ▼
                           [Post-Implementation Review (PIR)]
                           outcome: success | partial | rollback | failed
                           lessons_learned, success_rating
-                                    │
-                                    ▼ (non-success outcome veya manuel)
+                                            │
+                                            ▼ (non-success outcome OR manual)
                          [Improvement Candidate] (CSI Register)
                          improvement_source.source_type='pir'
-                                    │ approved
-                                    ▼
-                          [Yeni Change RFC] (loop devam eder)
+                                            │ approved
+                                            ▼
+                          [New Change RFC] (loop continues)
                           issue.spawned_from_improvement_id = improvement.id
 ```
 
-**Anahtar junction tabloları** (agent bunları bilmeli):
-- `release_change` — bir release altındaki change'ler
-- `release_pir` — bir release'in PIR kayıtları
-- `improvement_source` — improvement nereden doğdu (pir/problem_rca/incident_trend/audit/kb_feedback/manual)
+**Key junction tables** (every agent should know these):
+- `release_change` — the changes inside a release
+- `release_pir` — PIR records for a release
+- `improvement_source` — where an improvement originated (`pir`/`problem_rca`/`incident_trend`/`audit`/`kb_feedback`/`manual`)
 - `issue.spawned_from_improvement_id` — improvement → change origin pointer
-- `cab_review` — change için CAB üyelerinin onayları
-- `change_freeze_window` — implementation'ı bloklayan donmuş pencereler
+- `cab_review` — CAB members' approvals on a change
+- `change_freeze_window` — windows that block implementation
 
-## 3. Modül Haritası
+## 3. Module Map
 
-| Modül | issue_type | Ana akış | Kritik alanlar |
+| Module | issue_type | Flow | Critical fields |
 |---|---|---|---|
-| **Incident** | `incident` | Service disruption raporu → atanır → çözüm | `urgency`, `itil_impact`, `priority` (matrix'ten hesap), `is_major_incident` |
-| **Problem** | `problem` | Recurring incident root cause | `root_cause`, `workaround`, RCA notları |
+| **Incident** | `incident` | Service-disruption report → assigned → resolved | `urgency`, `itil_impact`, `priority` (matrix-computed), `is_major_incident` |
+| **Problem** | `problem` | Root cause for recurring incidents | `root_cause`, `workaround`, RCA notes |
 | **Change** | `change` | RFC → CAB → implement → PIR | `change_type` (standard/normal/emergency), `risk_level`, `impact_level`, `rollback_plan`, `test_plan` |
-| **Release** | `release` | Change'leri grupla, deploy et | `release_version`, `release_environment`, `release_build_status`, `release_deploy_status`, `release_notes`, `release_target_date` |
-| **Service Request** | `service_request` | Catalog'dan istek | `catalog_item_id`, `form_data` (JSONB) |
-| **Task** | `task` | Genel iş kaydı | parent_issue_id, due_date |
-| **CSI Improvement** | (kendi tablosu) | Continual improvement | PDCA (plan/do/check/act_notes), `expected_benefit`, `actual_benefit`, `priority`, `status` (submitted/reviewing/approved/implementing/done/rejected) |
-| **Contract** | (kendi tablosu) | Sözleşme yönetimi | `contract_type`, `party_name`, `start_date`/`end_date`, `auto_renew`, `notice_days`, `sla_policy_id`, attachments (PDF/DOCX) |
-| **CMDB** | (kendi tablosu) | Configuration items + ilişkiler | `cmdb_config_item`, `cmdb_relation` (depends_on, hosted_on, connected_to, part_of, uses, backs_up) |
-| **SLA** | `sla_policy` + `sla_record` | Response + resolution süre takibi | `response_minutes`, `resolution_minutes`, `pause_on_statuses`, `escalation_group_id`, `breach_at` |
+| **Release** | `release` | Group changes, deploy them | `release_version`, `release_environment`, `release_build_status`, `release_deploy_status`, `release_notes`, `release_target_date` |
+| **Service Request** | `service_request` | Catalog-driven request | `catalog_item_id`, `form_data` (JSONB) |
+| **Task** | `task` | Generic work item | `parent_issue_id`, `due_date` |
+| **CSI Improvement** | (own table) | Continual improvement | PDCA (`plan/do/check/act_notes`), `expected_benefit`, `actual_benefit`, `priority`, `status` (submitted/reviewing/approved/implementing/done/rejected) |
+| **Contract** | (own table) | Contract management | `contract_type`, `party_name`, `start_date`/`end_date`, `auto_renew`, `notice_days`, `sla_policy_id`, attachments (PDF/DOCX) |
+| **CMDB** | (own table) | Configuration items + relations | `cmdb_config_item`, `cmdb_relation` (`depends_on`, `hosted_on`, `connected_to`, `part_of`, `uses`, `backs_up`) |
+| **SLA** | `sla_policy` + `sla_record` | Response + resolution tracking | `response_minutes`, `resolution_minutes`, `pause_on_statuses`, `escalation_group_id`, `breach_at` |
 
-## 4. Agent Davranış Kuralları
+## 4. Agent Behavioural Rules
 
-Bir agent issue'ya atandığında **şu disiplini** uygulamalı:
+When assigned to an issue an agent must apply the following discipline:
 
-### 4.1 Status akışı
+### 4.1 Status flow
 
-- `todo` → `in_progress`: işe başlandığında ilk hareket. Tek atımda yorum + status değişikliği yap (event spam'i azalt).
-- `in_progress` → `in_review`: agent kendince bitirdi ama insan onayı bekliyor (örn: production change). PIR öncesi tipik halka.
-- `in_progress` → `done`: standalone task ya da insan onayı gereksiz iş. Yorum + result summary ile birlikte.
-- `in_progress` → `cancelled`: yapılması anlamsız (duplicate, out-of-scope). Gerekçeyi yorum olarak yaz.
+- `todo` → `in_progress`: first move when work starts. Combine the status change with a comment in one go (reduce event spam).
+- `in_progress` → `in_review`: agent believes the work is done but human approval is needed (e.g. a production change). The typical step before PIR.
+- `in_progress` → `done`: standalone task or human approval not required. Pair with a comment summarising the result.
+- `in_progress` → `cancelled`: makes no sense to continue (duplicate, out-of-scope). Always leave the reason as a comment.
 
-### 4.2 Yorum disiplini
+### 4.2 Comment discipline
 
-Her status değişikliğinde **ne yapıldığını, ne öğrenildiğini** yorum olarak bırak. Stil:
-- **Bullet points**, prozak değil — okuma hızı kritik.
-- **Failure ≠ blame**. "Bu adım N nedeniyle başarısız oldu → şu fallback denendi" formatı.
-- **Linked items**: ilgili issue/CI/contract referansı varsa link bırak (`#CHG-PROD-0042`).
+Every status change should be accompanied by a comment that says **what was done and what was learned**. Style:
+- **Bullet points**, not prose — reading speed matters.
+- **Failure ≠ blame**. Use the form "step N failed because X → fallback Y was attempted".
+- **Linked items**: reference related issues / CIs / contracts when relevant (`#CHG-PROD-0042`).
 
-### 4.3 Change tipindeki issue'larda
+### 4.3 For change-type issues
 
-- **Change_type='emergency'** olmayan change'in status'unu `in_progress`'e geçirirken, aktif **freeze window** varsa backend 409 döner. Bu durumda agent ya:
-  - change_type'ı `emergency` yapmalı (insan onayı sonrası — agent kendi başına yükseltmemeli)
-  - veya freeze window'un bitişini beklemeli
-- **rollback_plan** boşsa **uygulamadan önce** doldur. Plan yoksa deploy yapma.
-- **CAB review** gerekiyorsa (`change_type='normal'`/`risk_level='high'+`), önce `ListCABReviews` ile durumu kontrol et — onay yoksa implementation bloklu.
+- For non-`emergency` change types: moving status to `in_progress` while an active **freeze window** exists returns 409 from the backend. In that case the agent must either:
+  - Escalate `change_type` to `emergency` (only after human approval — the agent must not unilaterally upgrade)
+  - Or wait until the freeze window ends
+- If `rollback_plan` is empty, **fill it before** moving forward. Don't deploy without a plan.
+- If CAB review is required (`change_type='normal'` or `risk_level='high'+`), check with `ListCABReviews` first — without approval implementation is blocked.
 
-### 4.4 Release submit etmek
+### 4.4 Submitting a release
 
-Release issue'su (`issue_type='release'`) yapısı:
-1. `release_target_date` set et
-2. Scope: `POST /api/issues/{releaseId}/release-changes` ile change'leri ekle
-3. `release_build_status` → `passed` (test geçtikten sonra)
+For a release issue (`issue_type='release'`):
+1. Set `release_target_date`
+2. Build scope: `POST /api/issues/{releaseId}/release-changes` for each change
+3. `release_build_status` → `passed` (after tests succeed)
 4. `release_deploy_status` → `deploying` → `deployed`
-5. Deploy sonrası **PIR yaz**: `POST /api/issues/{releaseId}/release-pirs`
+5. After deploy, **write a PIR**: `POST /api/issues/{releaseId}/release-pirs`
    - `outcome`: success|partial|rollback|failed
    - `success_rating`: 1-5
-   - `lessons_learned`: bir sonraki release için ders
-   - `open_improvement`: true (default; success outcome'da false) — CSI register'a otomatik improvement candidate açılır
+   - `lessons_learned`: takeaway for the next release
+   - `open_improvement`: true (default; false on `success` outcome) — auto-creates a CSI improvement candidate
 
-### 4.5 Problem RCA tamamlandığında
+### 4.5 When problem RCA is complete
 
 ```
 POST /api/issues/{problemId}/spawn-improvement
 body: { title?, description?, category? }
 ```
 
-Otomatik improvement_source.source_type='problem_rca' işaretlenir; takım sonradan onaylayıp change'e çevirebilir.
+Automatically flags `improvement_source.source_type='problem_rca'`; the team can then approve and turn it into a change.
 
-### 4.6 Contract analizi
+### 4.6 Contract analysis
 
-Agent contract'a atandığında (`POST /api/contracts/{id}/analyze`):
-1. Attachments URL'lerini description'a alır (PDF/DOCX/TXT)
-2. **Standart analiz** çıkarır: taraflar, başlangıç/bitiş, değer, fesih, otomatik yenileme, gizlilik, SLA taahhütleri
-3. **Risk seviyesi** belirler: düşük/orta/yüksek + gerekçe
-4. Sonucu issue üzerinden timeline + comment olarak bırakır
+When assigned to a contract (`POST /api/contracts/{id}/analyze`):
+1. Pulls attachment URLs into the description (PDF/DOCX/TXT)
+2. Produces a **standard analysis**: parties, start/end, value, termination, auto-renewal, confidentiality, SLA commitments
+3. Determines **risk level**: low/medium/high + rationale
+4. Posts the result back as timeline + comment on the issue
 
-## 5. API Hızlı Rehber
+## 5. API Quick Reference
 
 ### 5.1 Authentication & workspace context
 
-Her istek:
-- `Authorization: Bearer <PAT veya JWT>`
-- `X-Workspace-Slug: acme` VEYA `X-Workspace-ID: <uuid>`
-- Agent ise: `X-Agent-ID: <agent.id>` + `X-Task-ID: <task.id>` (server cross-check yapar)
+Every request:
+- `Authorization: Bearer <PAT or JWT>`
+- `X-Workspace-Slug: acme` OR `X-Workspace-ID: <uuid>`
+- If you are an agent: `X-Agent-ID: <agent.id>` + `X-Task-ID: <task.id>` (the server cross-checks both)
 
 ### 5.2 Issue CRUD
 
 ```
 GET    /api/issues?issue_type=change&status=in_progress
-POST   /api/issues                       — yeni issue
-GET    /api/issues/{id}                  — detay
+POST   /api/issues                       — new issue
+GET    /api/issues/{id}                  — detail
 PUT    /api/issues/{id}                  — update (status, fields)
-POST   /api/issues/{id}/comments         — yorum
+POST   /api/issues/{id}/comments         — comment
 GET    /api/issues/{id}/timeline         — audit log
 ```
 
-### 5.3 ITIL4 loop endpoint'leri (en kritik)
+### 5.3 ITIL4 loop endpoints (most important)
 
 ```
 # Release
@@ -177,7 +177,7 @@ POST   /api/workspaces/{wsId}/improvements/{id}/spawn-change body: {title, chang
 # Problem → Improvement
 POST   /api/issues/{problemId}/spawn-improvement
 
-# Contract analiz
+# Contract analysis
 POST   /api/contracts/{id}/attachments    (multipart)
 POST   /api/contracts/{id}/analyze        body: {agent_id, prompt?}
 ```
@@ -199,12 +199,12 @@ GET    /api/workspaces/{wsId}/cmdb/impact-analysis/{ciId}
 POST   /api/workspaces/{wsId}/cmdb/relations  body: {source_ci_id, target_ci_id, relationship_type}
 ```
 
-## 6. Veri Modeli — Sık Karşılaşılan Yapılar
+## 6. Data Model — Common Shapes
 
-### Issue temel alanlar
+### Issue core fields
 ```ts
 {
-  id: uuid, workspace_id: uuid, number: int,           // workspace içinde unique
+  id: uuid, workspace_id: uuid, number: int,           // unique within workspace
   title, description,
   status: "backlog"|"todo"|"in_progress"|"in_review"|"done"|"cancelled",
   priority: "none"|"low"|"medium"|"high"|"urgent",
@@ -241,34 +241,34 @@ POST   /api/workspaces/{wsId}/cmdb/relations  body: {source_ci_id, target_ci_id,
 }
 ```
 
-## 7. Anti-Pattern'ler — Yapma!
+## 7. Anti-Patterns — Don't!
 
-❌ **Birden çok workspace'in datasını karıştırma**. Her sorgu `workspace_id` filtreli; cross-workspace ID guessing backend 404 döner.
+❌ **Don't mix data across workspaces**. Every query is `workspace_id`-filtered; cross-workspace ID guessing returns 404 from the backend.
 
-❌ **Status'u sessizce değiştirme**. Her transition yorum + reason ile birlikte.
+❌ **Don't change status silently**. Every transition needs a comment + reason.
 
-❌ **Emergency change yapma kararını agent kendi başına alma**. Insan onayı + audit trail için Change Advisory Board süreci.
+❌ **Don't decide on `emergency` change classification alone**. Human approval + audit trail is what the Change Advisory Board exists for.
 
-❌ **Freeze window'u bypass etmeye çalışma**. Backend zaten engelliyor; agent gerekirse change_type değiştirmeyi insan'a önersin.
+❌ **Don't try to bypass a freeze window**. The backend blocks it anyway; if you really must proceed, propose `change_type` escalation to a human instead.
 
-❌ **Rollback plan'sız release deploy etme**. release.rollback_plan boşsa PATCH ile doldur, sonra deploy.
+❌ **Don't deploy a release without a rollback plan**. If `release.rollback_plan` is empty, PATCH it first, then deploy.
 
-❌ **PIR'sız release "done" işaretleme**. Deploy tamamlandı ≠ release tamamlandı. PIR çıktısı CSI register'ı besler.
+❌ **Don't mark a release `done` without a PIR**. Deploy complete ≠ release complete. The PIR output feeds the CSI register.
 
-❌ **Contract'a PDF eklerken ve agent analizinde** — attachment workspace_id ile bağlı, başka workspace'in dosyasına ulaşmaya çalışma.
+❌ **Don't reach across workspaces when attaching contracts or analysing PDFs**. Attachments are workspace-scoped — don't try to access another workspace's files.
 
-## 8. Ek Dosyalar
+## 8. Supporting Files
 
-Bu skill paketi şu destek dosyalarını içerir:
-- `api-cheatsheet.md` — Tüm REST endpoint'lerinin detaylı listesi
-- `itil4-loop.md` — Modüller arası akışın somut örnekleriyle anlatımı
-- `agent-task-patterns.md` — Sık karşılaşılan görev kalıpları (incident triage, change implementation, vs.)
+This skill bundle ships with the following supporting files:
+- `api-cheatsheet.md` — Detailed list of every REST endpoint
+- `itil4-loop.md` — Concrete cross-module flow examples
+- `agent-task-patterns.md` — Common task patterns (incident triage, change implementation, etc.)
 
-Detay için bu dosyalara bak.
+Reach for those when you need depth on a specific topic.
 
 ---
 
-**Kaynak referansları:**
-- CLAUDE.md (proje kök dizini) — mimari kararlar
-- `server/migrations/105_itil4_loop.up.sql` — ITIL4 loop şeması
-- `server/internal/handler/{release,improvement_extra,contract_attachment,change}.go` — handler implementasyonları
+**Source references:**
+- CLAUDE.md (project root) — architectural decisions
+- `server/migrations/105_itil4_loop.up.sql` — ITIL4 loop schema
+- `server/internal/handler/{release,improvement_extra,contract_attachment,change}.go` — handler implementations

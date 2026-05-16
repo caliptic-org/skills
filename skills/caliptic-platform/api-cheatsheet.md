@@ -1,168 +1,170 @@
 # Caliptic API Cheatsheet
 
-Tüm endpoint'ler `Authorization: Bearer <token>` + `X-Workspace-Slug` veya `X-Workspace-ID` header gerektirir. URL-prefixed workspace route'larında `{wsId}` URL param'ı kullanılır.
+Every endpoint expects `Authorization: Bearer <token>` plus a workspace
+context header (`X-Workspace-Slug` or `X-Workspace-ID`). URL-prefixed
+workspace routes also accept the workspace ID inline as `{wsId}`.
 
 ## Issues
 
-| Method | Path | İşlev |
+| Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/issues` | List with filters: `issue_type`, `status`, `priority`, `assignee_id`, `project_id`, `sprint_id`, `limit`, `offset` |
+| GET | `/api/issues` | List, filterable by `issue_type`, `status`, `priority`, `assignee_id`, `project_id`, `sprint_id`, `limit`, `offset` |
 | POST | `/api/issues` | Create. Body: `{title, description, issue_type, status, priority, assignee_type, assignee_id, parent_issue_id, project_id, due_date, catalog_item_id?, form_data?}` |
-| GET | `/api/issues/{id}` | Detail (workspace check otomatik) |
+| GET | `/api/issues/{id}` | Detail (workspace check is automatic) |
 | PUT | `/api/issues/{id}` | Update — partial fields |
 | DELETE | `/api/issues/{id}` | Soft delete |
 | GET | `/api/issues/{id}/timeline` | Audit log (status changes, assignments, comments) |
-| GET | `/api/issues/{id}/comments` | Yorumlar |
-| POST | `/api/issues/{id}/comments` | Yorum ekle. Body: `{content, type?}` |
-| POST | `/api/issues/{id}/subscribe` | Issue'yu izle |
+| GET | `/api/issues/{id}/comments` | Comments |
+| POST | `/api/issues/{id}/comments` | Add comment. Body: `{content, type?}` |
+| POST | `/api/issues/{id}/subscribe` | Watch this issue |
 | POST | `/api/issues/{id}/reactions` | Emoji react. Body: `{emoji}` |
-| GET | `/api/issues/{id}/attachments` | Dosya ekleri |
-| POST | `/api/issues/{id}/rerun` | Agent task'i yeniden başlat |
+| GET | `/api/issues/{id}/attachments` | File attachments |
+| POST | `/api/issues/{id}/rerun` | Re-dispatch the agent task |
 
 ## Change Management
 
-| Method | Path | İşlev |
+| Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/issues/{id}/cab-reviews` | CAB üyelerinin onay durumları |
-| POST | `/api/issues/{id}/cab-reviews` | Reviewer ekle. Body: `{reviewer_id}` |
-| POST | `/api/issues/{id}/cab-reviews/decision` | Kendi kararını gönder. Body: `{decision: approved\|rejected\|abstained, notes?}` |
-| GET | `/api/workspaces/{wsId}/freeze-windows` | Aktif/gelecek freeze window'lar |
-| POST | `/api/workspaces/{wsId}/freeze-windows` | Yeni freeze. Body: `{name, starts_at, ends_at, reason?}` |
+| GET | `/api/issues/{id}/cab-reviews` | CAB member approval states |
+| POST | `/api/issues/{id}/cab-reviews` | Add a reviewer. Body: `{reviewer_id}` |
+| POST | `/api/issues/{id}/cab-reviews/decision` | Submit your own decision. Body: `{decision: approved\|rejected\|abstained, notes?}` |
+| GET | `/api/workspaces/{wsId}/freeze-windows` | Active & upcoming freeze windows |
+| POST | `/api/workspaces/{wsId}/freeze-windows` | New freeze. Body: `{name, starts_at, ends_at, reason?}` |
 
-## Release Management (yeni — migration 105)
+## Release Management (new — migration 105)
 
-| Method | Path | İşlev |
+| Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/issues/{id}/release-detail` | Release header + change_count + pir_count |
 | PATCH | `/api/issues/{id}/release-phase` | Build/deploy status, target_date, release_notes, rollback_plan |
-| GET | `/api/issues/{id}/release-changes` | Bu release'in scope'undaki change'ler |
-| POST | `/api/issues/{id}/release-changes` | Change ekle. Body: `{change_id}` — change_type='change' ve aynı workspace olmalı |
-| DELETE | `/api/issues/{id}/release-changes/{changeId}` | Change'i scope'tan çıkar |
-| GET | `/api/issues/{id}/release-pirs` | Tüm PIR kayıtları (multiple olabilir) |
-| POST | `/api/issues/{id}/release-pirs` | PIR submit. Body: `{outcome, success_rating, what_went_well, what_went_wrong, lessons_learned, open_improvement?}` |
-| DELETE | `/api/issues/{id}/release-pirs/{pirId}` | PIR sil (owner only) |
+| GET | `/api/issues/{id}/release-changes` | Changes currently in this release's scope |
+| POST | `/api/issues/{id}/release-changes` | Add a change. Body: `{change_id}` — must be `issue_type='change'` in the same workspace |
+| DELETE | `/api/issues/{id}/release-changes/{changeId}` | Remove a change from scope |
+| GET | `/api/issues/{id}/release-pirs` | All PIR records (multiple are allowed) |
+| POST | `/api/issues/{id}/release-pirs` | Submit a PIR. Body: `{outcome, success_rating, what_went_well, what_went_wrong, lessons_learned, open_improvement?}` |
+| DELETE | `/api/issues/{id}/release-pirs/{pirId}` | Delete a PIR record (owner only) |
 
 ## Improvement (CSI)
 
-| Method | Path | İşlev |
+| Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/workspaces/{wsId}/improvements` | List |
 | POST | `/api/workspaces/{wsId}/improvements` | Create |
-| PATCH | `/api/workspaces/{wsId}/improvements/{id}` | Update (status değişimi PDCA + dahil) |
-| DELETE | `/api/workspaces/{wsId}/improvements/{id}` | Sil (owner/admin) |
+| PATCH | `/api/workspaces/{wsId}/improvements/{id}` | Update (covers status changes and PDCA fields) |
+| DELETE | `/api/workspaces/{wsId}/improvements/{id}` | Delete (owner/admin) |
 | GET | `/api/workspaces/{wsId}/improvements/{id}/evidence` | Sources + spawned issues (loop trace) |
-| POST | `/api/workspaces/{wsId}/improvements/{id}/spawn-change` | approved/implementing improvement'tan yeni RFC. Body: `{title, change_type, risk_level?, impact_level?, project_id?}` |
+| POST | `/api/workspaces/{wsId}/improvements/{id}/spawn-change` | New RFC from an approved/implementing improvement. Body: `{title, change_type, risk_level?, impact_level?, project_id?}` |
 
 ## Problem & RCA
 
-| Method | Path | İşlev |
+| Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/workspaces/{wsId}/problems` | Problem listesi |
-| PATCH | `/api/issues/{id}/rca` | RCA güncelle. Body: `{root_cause, workaround}` |
-| GET | `/api/issues/{id}/related-incidents` | Bu problem'e bağlı incident'lar |
-| POST | `/api/issues/{id}/link-problem` | Incident'i problem'a bağla |
-| POST | `/api/issues/{problemId}/spawn-improvement` | Problem RCA'dan CSI improvement aç. Body: `{title?, description?, category?}` |
+| GET | `/api/workspaces/{wsId}/problems` | List of problems |
+| PATCH | `/api/issues/{id}/rca` | Update RCA. Body: `{root_cause, workaround}` |
+| GET | `/api/issues/{id}/related-incidents` | Incidents linked to this problem |
+| POST | `/api/issues/{id}/link-problem` | Link an incident to a problem |
+| POST | `/api/issues/{problemId}/spawn-improvement` | Open a CSI improvement from problem RCA. Body: `{title?, description?, category?}` |
 
 ## Contract Management
 
-| Method | Path | İşlev |
+| Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/workspaces/{wsId}/contracts` | List |
 | POST | `/api/workspaces/{wsId}/contracts` | Create |
 | PATCH | `/api/workspaces/{wsId}/contracts/{id}` | Update |
-| DELETE | `/api/workspaces/{wsId}/contracts/{id}` | Sil |
-| GET | `/api/workspaces/{wsId}/contracts/{id}/attachments` | Eklenen PDF/DOCX dosyaları |
-| POST | `/api/workspaces/{wsId}/contracts/{id}/attachments` | **multipart** — file field "file" |
-| DELETE | `/api/workspaces/{wsId}/contracts/{id}/attachments/{attId}` | Sil |
-| POST | `/api/workspaces/{wsId}/contracts/{id}/analyze` | Agent task tetikle. Body: `{agent_id, prompt?}` — issue oluşturup agent'a atar |
+| DELETE | `/api/workspaces/{wsId}/contracts/{id}` | Delete |
+| GET | `/api/workspaces/{wsId}/contracts/{id}/attachments` | Attached PDF/DOCX files |
+| POST | `/api/workspaces/{wsId}/contracts/{id}/attachments` | **multipart** — form field name `file` |
+| DELETE | `/api/workspaces/{wsId}/contracts/{id}/attachments/{attId}` | Delete |
+| POST | `/api/workspaces/{wsId}/contracts/{id}/analyze` | Trigger an agent task. Body: `{agent_id, prompt?}` — creates an issue and assigns the agent |
 
 ## CMDB
 
-| Method | Path | İşlev |
+| Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/workspaces/{wsId}/cmdb/cis` | Tüm CI'lar |
-| POST | `/api/workspaces/{wsId}/cmdb/cis` | CI yarat. Body: `{name, ci_class, status?, environment?, parent_ci_id?, criticality?}` |
+| GET | `/api/workspaces/{wsId}/cmdb/cis` | All CIs |
+| POST | `/api/workspaces/{wsId}/cmdb/cis` | Create a CI. Body: `{name, ci_class, status?, environment?, parent_ci_id?, criticality?}` |
 | GET | `/api/workspaces/{wsId}/cmdb/cis/{ciId}` | Detail |
 | PATCH | `/api/workspaces/{wsId}/cmdb/cis/{ciId}` | Update |
-| DELETE | `/api/workspaces/{wsId}/cmdb/cis/{ciId}` | Sil |
+| DELETE | `/api/workspaces/{wsId}/cmdb/cis/{ciId}` | Delete |
 | GET | `/api/workspaces/{wsId}/cmdb/topology?root_ci_id=<uuid>&depth=3` | Nodes + edges |
-| GET | `/api/workspaces/{wsId}/cmdb/impact-analysis/{ciId}` | "Bu CI bozulursa ne etkilenir?" |
-| GET | `/api/workspaces/{wsId}/cmdb/dependencies/{ciId}` | "Bu CI neye bağımlı?" |
-| GET | `/api/workspaces/{wsId}/cmdb/relations` | Tüm ilişki kenarları |
-| POST | `/api/workspaces/{wsId}/cmdb/relations` | İlişki yarat. Body: `{source_ci_id, target_ci_id, relationship_type: depends_on\|hosted_on\|connected_to\|part_of\|uses\|backs_up}` |
+| GET | `/api/workspaces/{wsId}/cmdb/impact-analysis/{ciId}` | "If this CI breaks, what's affected?" |
+| GET | `/api/workspaces/{wsId}/cmdb/dependencies/{ciId}` | "What does this CI depend on?" |
+| GET | `/api/workspaces/{wsId}/cmdb/relations` | All relationship edges |
+| POST | `/api/workspaces/{wsId}/cmdb/relations` | Create a relation. Body: `{source_ci_id, target_ci_id, relationship_type: depends_on\|hosted_on\|connected_to\|part_of\|uses\|backs_up}` |
 
 ## SLA
 
-| Method | Path | İşlev |
+| Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/workspaces/{wsId}/sla-policies` | Tüm policy'ler |
-| POST | `/api/workspaces/{wsId}/sla-policies` | Yeni policy |
-| GET | `/api/issues/{id}/sla` | Bu issue'nun SLA kayıtları (response + resolution stage'leri) |
+| GET | `/api/workspaces/{wsId}/sla-policies` | All policies |
+| POST | `/api/workspaces/{wsId}/sla-policies` | New policy |
+| GET | `/api/issues/{id}/sla` | This issue's SLA records (response + resolution stages) |
 
 ## Service Catalog
 
-| Method | Path | İşlev |
+| Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/workspaces/{wsId}/catalog/categories` | Kategoriler |
-| GET | `/api/workspaces/{wsId}/catalog/items` | Service catalog item'ları |
-| POST | `/api/workspaces/{wsId}/catalog/items` | Yeni item |
-| GET | `/api/workspaces/{wsId}/catalog/items/{itemId}` | Detay (form schema dahil) |
+| GET | `/api/workspaces/{wsId}/catalog/categories` | Categories |
+| GET | `/api/workspaces/{wsId}/catalog/items` | Service catalog items |
+| POST | `/api/workspaces/{wsId}/catalog/items` | New item |
+| GET | `/api/workspaces/{wsId}/catalog/items/{itemId}` | Detail (form schema included) |
 
-Service request açma: `POST /api/issues` + `issue_type='service_request'` + `catalog_item_id` + `form_data`.
+Open a service request: `POST /api/issues` with `issue_type='service_request'` + `catalog_item_id` + `form_data`.
 
-## Agents (workspace üyesi)
+## Agents (workspace members)
 
-| Method | Path | İşlev |
+| Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/agents` | Workspace agent'ları |
-| POST | `/api/agents` | Yeni agent yarat (admin/owner) |
+| GET | `/api/agents` | Workspace agents |
+| POST | `/api/agents` | Create an agent (admin/owner) |
 | GET | `/api/agents/{id}` | Detail |
-| PUT | `/api/agents/{id}` | Update (instructions, model, custom_env vs.) |
-| GET | `/api/agents/{id}/skills` | Atanan skill'ler |
-| PUT | `/api/agents/{id}/skills` | Skill setini değiştir. Body: `{skill_ids: [...]}` |
-| GET | `/api/agents/{id}/tasks` | Task geçmişi |
+| PUT | `/api/agents/{id}` | Update (instructions, model, custom_env, etc.) |
+| GET | `/api/agents/{id}/skills` | Assigned skills |
+| PUT | `/api/agents/{id}/skills` | Replace the skill set. Body: `{skill_ids: [...]}` |
+| GET | `/api/agents/{id}/tasks` | Task history |
 | POST | `/api/agents/{id}/archive` | Soft delete |
 
 ## Skills
 
-| Method | Path | İşlev |
+| Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/skills` | Workspace skill'leri |
-| POST | `/api/skills` | Yeni skill. Body: `{name, description, content, config?}` |
+| GET | `/api/skills` | Workspace skills |
+| POST | `/api/skills` | New skill. Body: `{name, description, content, config?}` |
 | GET | `/api/skills/{id}` | Detail |
 | PUT | `/api/skills/{id}` | Update |
-| GET | `/api/skills/{id}/files` | Destek dosyaları |
-| PUT | `/api/skills/{id}/files` | File ekle/güncelle. Body: `{path, content}` |
-| POST | `/api/skills/import` | URL'den import (ClawHub, GitHub). Body: `{url}` |
+| GET | `/api/skills/{id}/files` | Supporting files |
+| PUT | `/api/skills/{id}/files` | Upsert a file. Body: `{path, content}` |
+| POST | `/api/skills/import` | Import from URL (ClawHub, GitHub). Body: `{url}` |
 
 ## Inbox
 
-| Method | Path | İşlev |
+| Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/inbox` | Bildirim listesi |
-| GET | `/api/inbox/unread-count` | Okunmamış sayısı |
-| POST | `/api/inbox/{id}/read` | Okundu işaretle |
-| POST | `/api/inbox/mark-all-read` | Hepsi okundu |
-| POST | `/api/inbox/{id}/archive` | Arşivle |
+| GET | `/api/inbox` | Notification feed |
+| GET | `/api/inbox/unread-count` | Unread count |
+| POST | `/api/inbox/{id}/read` | Mark as read |
+| POST | `/api/inbox/mark-all-read` | Mark all as read |
+| POST | `/api/inbox/{id}/archive` | Archive |
 
-## Chat (Agent direkt sohbet)
+## Chat (direct conversation with an agent)
 
-| Method | Path | İşlev |
+| Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/chat/sessions` | Yeni chat session. Body: `{agent_id, title?}` |
-| GET | `/api/chat/sessions` | Liste |
+| POST | `/api/chat/sessions` | New chat session. Body: `{agent_id, title?}` |
+| GET | `/api/chat/sessions` | List |
 | GET | `/api/chat/sessions/{id}` | Detail |
 | DELETE | `/api/chat/sessions/{id}` | Archive (soft) |
-| DELETE | `/api/chat/sessions/{id}/permanent` | Hard delete (cascade messages) |
-| GET | `/api/chat/sessions/{id}/messages` | Mesajlar |
-| POST | `/api/chat/sessions/{id}/messages` | Mesaj gönder + agent yanıt task'i tetikler. Body: `{content}` |
-| DELETE | `/api/chat/sessions/{id}/messages/{messageId}` | Mesaj sil |
+| DELETE | `/api/chat/sessions/{id}/permanent` | Hard delete (cascades messages) |
+| GET | `/api/chat/sessions/{id}/messages` | Messages |
+| POST | `/api/chat/sessions/{id}/messages` | Send a message — triggers an agent reply task. Body: `{content}` |
+| DELETE | `/api/chat/sessions/{id}/messages/{messageId}` | Delete a single message |
 
-## Workflows (görsel akış motoru)
+## Workflows (visual flow engine)
 
-| Method | Path | İşlev |
+| Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/workflows` | Workflow listesi |
+| GET | `/api/workflows` | Workflow list |
 | POST | `/api/workflows` | Create. Body: `{name, workflow_type: automation\|process, config}` |
-| POST | `/api/workflows/{id}/events` | Event push (workflow trigger'ı) |
-| GET | `/api/workflows/{id}/runs` | Çalışma geçmişi |
+| POST | `/api/workflows/{id}/events` | Push an event (workflow trigger) |
+| GET | `/api/workflows/{id}/runs` | Run history |

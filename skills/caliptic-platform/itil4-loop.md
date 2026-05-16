@@ -1,12 +1,13 @@
-# ITIL4 ITSM Loop — Somut Akış Örnekleri
+# ITIL4 ITSM Loop — Concrete Flow Examples
 
-Caliptic'in ITIL4 hizmet değer akışı modüller arası bağlantılarla kurulmuştur. Bu rehber 4 tipik senaryoyu adım adım gösterir.
+Caliptic's ITIL4 service value chain is wired together with cross-module
+junction tables. This guide walks four typical scenarios step by step.
 
-## Senaryo 1: Production Incident → Permanent Fix → Release
+## Scenario 1: Production Incident → Permanent Fix → Release
 
-**Tetikleyici:** Monitoring alert düşer; user "ödeme servisi cevap vermiyor" diyor.
+**Trigger:** Monitoring alert fires; a user reports "the payment service isn't responding."
 
-### Adım 1 — Incident aç
+### Step 1 — Open an incident
 ```http
 POST /api/issues
 {
@@ -19,10 +20,10 @@ POST /api/issues
   "assignee_id": "<on-call-agent-id>"
 }
 ```
-Backend `priority_matrix` aktifse priority otomatik hesaplanır.
+If `priority_matrix` is enabled the priority is computed automatically.
 
-### Adım 2 — Geçici çözüm (workaround) + Problem oluştur
-Incident kapatıldıktan sonra RCA için:
+### Step 2 — Apply a workaround + open a problem
+After closing the incident, for the RCA:
 ```http
 POST /api/issues
 {
@@ -31,13 +32,13 @@ POST /api/issues
   "priority": "high"
 }
 ```
-Sonra incident'ı problem'a link et:
+Then link the incident to the problem:
 ```http
 POST /api/issues/{incidentId}/link-problem
 { "problem_id": "<problemId>" }
 ```
 
-### Adım 3 — RCA tamamla, kalıcı çözüm için improvement
+### Step 3 — Complete the RCA, open a CSI improvement for the permanent fix
 ```http
 PATCH /api/issues/{problemId}/rca
 {
@@ -47,15 +48,15 @@ PATCH /api/issues/{problemId}/rca
 
 POST /api/issues/{problemId}/spawn-improvement
 {
-  "title": "Increase payment-service connection pool + circuit breaker",
+  "title": "Raise payment-service connection pool + add circuit breaker",
   "category": "tool",
-  "expected_benefit": "Eliminate restart-every-6h workaround"
+  "expected_benefit": "Eliminate the restart-every-6h workaround"
 }
 ```
-→ improvement_proposal kaydı açılır, `improvement_source.source_type='problem_rca'`.
+→ An `improvement_proposal` record is created with `improvement_source.source_type='problem_rca'`.
 
-### Adım 4 — Improvement approved → Change spawn
-Takım approve eder:
+### Step 4 — Improvement approved → spawn a change
+The team approves:
 ```http
 PATCH /api/workspaces/{wsId}/improvements/{improvementId}
 { "status": "approved" }
@@ -68,9 +69,9 @@ POST /api/workspaces/{wsId}/improvements/{improvementId}/spawn-change
   "impact_level": "low"
 }
 ```
-→ Yeni issue (type=change), `spawned_from_improvement_id` set.
+→ A new issue (`type=change`) is created with `spawned_from_improvement_id` set.
 
-### Adım 5 — CAB review + implement
+### Step 5 — CAB review + implement
 ```http
 POST /api/issues/{changeId}/cab-reviews { "reviewer_id": "<db-team-lead>" }
 POST /api/issues/{changeId}/cab-reviews/decision { "decision": "approved", "notes": "Pool size validated in staging" }
@@ -78,9 +79,9 @@ POST /api/issues/{changeId}/cab-reviews/decision { "decision": "approved", "note
 PUT /api/issues/{changeId}
 { "rollback_plan": "kubectl rollout undo + revert config map", "status": "in_progress" }
 ```
-Backend freeze window check yapar — aktifse 409 + change_type=emergency önerisi.
+The backend performs a freeze-window check — if one is active you'll get a 409 with a hint to escalate `change_type=emergency`.
 
-### Adım 6 — Release scope'a ekle
+### Step 6 — Add to release scope
 ```http
 POST /api/issues
 { "title": "Payment service v2.4.0", "issue_type": "release", "release_environment": "production" }
@@ -91,12 +92,12 @@ PATCH /api/issues/{releaseId}/release-phase
 {
   "release_build_status": "passed",
   "release_target_date": "2026-05-20",
-  "release_notes": "Increase DB pool to 100 + circuit breaker",
+  "release_notes": "Raise DB pool to 100 + circuit breaker",
   "rollback_plan": "kubectl rollout undo deployment/payment-service"
 }
 ```
 
-### Adım 7 — Deploy + PIR
+### Step 7 — Deploy + PIR
 ```http
 PATCH /api/issues/{releaseId}/release-phase
 { "release_deploy_status": "deployed" }
@@ -105,21 +106,21 @@ POST /api/issues/{releaseId}/release-pirs
 {
   "outcome": "success",
   "success_rating": 5,
-  "what_went_well": "Deploy 4 dk, zero downtime, pool stable",
-  "lessons_learned": "Pool size monitoring metrics eklemek lazım",
+  "what_went_well": "4-minute deploy, zero downtime, pool stable",
+  "lessons_learned": "We should add pool-size monitoring metrics",
   "open_improvement": true
 }
 ```
-→ Yeni improvement candidate açılır (`source_type='pir'`) — döngü kapanır, sürekli iyileştirme.
+→ A new improvement candidate is opened (`source_type='pir'`) — the loop closes and continuous improvement continues.
 
 ---
 
-## Senaryo 2: Emergency Change (Freeze Window'a Rağmen)
+## Scenario 2: Emergency Change (despite an active Freeze Window)
 
-Production'da güvenlik açığı var. Aktif freeze window olsa bile geçmek gerek.
+There's a security vulnerability in production. We must push through even though a freeze window is active.
 
 ```http
-# 1. Change yarat
+# 1. Create the change
 POST /api/issues
 {
   "title": "EMERGENCY: SQL injection patch for /api/search",
@@ -129,18 +130,18 @@ POST /api/issues
   "rollback_plan": "git revert + redeploy"
 }
 
-# 2. Direkt implement — freeze validator emergency'yi bypass eder
+# 2. Implement directly — the freeze validator bypasses emergency types
 PUT /api/issues/{id}
 { "status": "in_progress", "change_type": "emergency" }
 ```
 
-**Agent davranışı:** Emergency'yi sadece insan onaylar. Agent kendi başına `change_type='emergency'` set etmemeli — instead `change_type='normal'` deneyip 409 alırsa yorum bırakır: "Freeze window aktif; emergency override için insan onayı gerekli."
+**Agent behaviour:** Only a human can declare a change `emergency`. An agent should not set `change_type='emergency'` unilaterally — instead, try `change_type='normal'` first and, on the resulting 409, leave a comment: "Freeze window is active; emergency override requires human approval."
 
 ---
 
-## Senaryo 3: Release Rollback + İkinci PIR
+## Scenario 3: Release Rollback + Second PIR
 
-Deploy başarısız:
+Deploy failed:
 ```http
 PATCH /api/issues/{releaseId}/release-phase
 { "release_deploy_status": "rolled_back" }
@@ -149,56 +150,57 @@ POST /api/issues/{releaseId}/release-pirs
 {
   "outcome": "rollback",
   "success_rating": 2,
-  "what_went_wrong": "DB migration script lock-table 12 dk sürdü, traffic geri çekildi",
-  "lessons_learned": "Online schema migration + maintenance window protokolü",
-  "open_improvement": true  // default true; success olmayan outcome'da otomatik
+  "what_went_wrong": "The DB migration script held a table-level lock for 12 minutes; traffic had to be drained",
+  "lessons_learned": "Adopt an online schema migration + maintenance-window protocol",
+  "open_improvement": true  // default true; on non-success outcomes auto-fires
 }
 ```
-→ CSI register'a "Online schema migration adopt et" improvement candidate'ı düşer.
+→ A "Adopt an online schema migration" improvement candidate lands in the CSI register.
 
-Hotfix + redeploy sonrası **ikinci PIR** kaydı eklenebilir (release_pir composite key değil, n:1 ilişki):
+After the hotfix + redeploy a **second PIR** record can be added (`release_pir` is an n:1, not a composite-key relation):
 ```http
 POST /api/issues/{releaseId}/release-pirs
-{ "outcome": "success", "success_rating": 4, "lessons_learned": "Online migration başarılı" }
+{ "outcome": "success", "success_rating": 4, "lessons_learned": "Online migration succeeded" }
 ```
 
 ---
 
-## Senaryo 4: Contract → Asset → SLA Chain
+## Scenario 4: Contract → Asset → SLA Chain
 
-User: "Acme MSA sözleşmemizin SLA'sı nedir, hangi asset'leri kapsıyor?"
+User: "What's the SLA on our Acme MSA, and which assets does it cover?"
 
 ```http
-# 1. Contract bul
+# 1. Find the contract
 GET /api/workspaces/{wsId}/contracts
 → filter party_name="Acme"
 
-# 2. Contract attachment'ı yükle (PDF MSA)
+# 2. Upload an attachment (MSA PDF)
 POST /api/workspaces/{wsId}/contracts/{id}/attachments
 (multipart, file: msa-2026.pdf)
 
-# 3. Agent ile analiz et
+# 3. Trigger an agent analysis
 POST /api/workspaces/{wsId}/contracts/{id}/analyze
-{ "agent_id": "<contract-analyzer-agent>", "prompt": "SLA süreleri, fesih hükümleri ve kapsanan servisleri çıkar" }
-→ Yeni issue açılır, agent task çalışır, sonuçlar timeline'a düşer
+{ "agent_id": "<contract-analyzer-agent>", "prompt": "Extract SLA durations, termination clauses, and covered services" }
+→ A new issue is opened, the agent task runs, results land in the timeline
 
-# 4. Asset'leri contract'a bağla (CMDB tarafı)
-# Şu anda asset.contract_id direkt set — handler önümüzdeki sürümde gelecek;
-# manuel SQL ile yapılabilir
+# 4. Tie assets to the contract (CMDB side)
+# Currently asset.contract_id is set directly via PATCH; a fully-featured
+# handler is on the roadmap. For now this can be done with a manual SQL
+# update or the asset update endpoint.
 ```
 
-**Agent davranışı:** PDF analizinde **bullet point** formatı, kritik tarihleri **kalın** ve **risk seviyesini** sonda belirt (düşük/orta/yüksek + gerekçe).
+**Agent behaviour:** PDF analysis should use **bullet points**, **bold** critical dates, and finish with a **risk level** (low/medium/high) + rationale.
 
 ---
 
-## Modüller Arası Bağlantı Trace'i
+## Tracing Cross-Module Relationships
 
-Bir improvement'tan başlayıp tüm zinciri görmek için:
+To start from an improvement and walk the whole chain:
 ```http
 GET /api/workspaces/{wsId}/improvements/{id}/evidence
 ```
 
-Dönen yapı:
+Response shape:
 ```json
 {
   "sources": [
@@ -210,22 +212,22 @@ Dönen yapı:
 }
 ```
 
-Aynı şekilde "bu PIR şu improvement'ları açtı" sorgusu:
-```http
+A symmetrical "which improvements did this PIR spawn?" lookup is partially supported:
+```
 GET /api/improvement-sources?source_type=pir&source_ref_id=<pirId>
 ```
-(Bu endpoint şu anda yok — ListImprovementsBySource backend query'si var ama handler yazılmadı. Frontend gerek duydukça eklenecek.)
+(The handler isn't yet exposed — the `ListImprovementsBySource` query exists in the backend; the route will be added as the frontend needs it.)
 
 ---
 
-## Anti-Pattern'ler
+## Anti-Patterns
 
-❌ **Change implement → release submit → PIR atla**. Loop yarım kalır, CSI register beslenmez.
+❌ **Don't skip PIR after implementing a change + submitting a release.** The loop stays half-open and the CSI register goes unfed.
 
-❌ **Improvement status'unu manuel 'done' yap, spawned_change'siz**. ITIL4 "implementation" gerçekten bir change ile yapılmalı; aksi audit trail'i bozar.
+❌ **Don't mark an improvement `done` without a spawned change.** In ITIL4, "implementation" must happen through a real change record; bypassing this breaks the audit trail.
 
-❌ **Problem'i incident bağlantısı olmadan kapatma**. ITIL4'te problem her zaman 1+ incident'tan referans alır.
+❌ **Don't close a problem without at least one linked incident.** In ITIL4 a problem always references one or more incidents.
 
-❌ **CAB onayı olmadan high-risk change implement etme**. `cab_review` tablosunda decision='approved' satırı olmadan status'u `in_progress`'e çekme.
+❌ **Don't implement a high-risk change without CAB approval.** Don't push status to `in_progress` unless `cab_review` has a `decision='approved'` row.
 
-❌ **Sözleşmeli asset'i contract bağı olmadan değiştir**. Asset.contract_id var (migration 106) — ileride bu chain SLA tarafına otomatik bağlanacak.
+❌ **Don't update a contracted asset without checking the contract binding.** `asset.contract_id` exists (migration 106); future versions will auto-link this chain to the SLA system.

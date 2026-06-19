@@ -127,7 +127,17 @@ body: { title?, description?, category? }
 
 Automatically flags `improvement_source.source_type='problem_rca'`; the team can then approve and turn it into a change.
 
-### 4.6 Contract analysis
+### 4.6 Always check project settings before sequencing
+
+Before delegating or sequencing any multi-step work, **read `caliptic project get <id> --output json`** and honour the project's preferred workflow. Do NOT apply ITIL4 PR/CAB defaults uniformly — they apply to production `change_type='normal'`/`risk_level='high'+` only. For everyday development:
+
+- If the project signals direct-merge (no `merge_strategy='pr_required'` field, small team, fast-iteration code), agents push directly to main after completing work; no PR + review round-trip.
+- If the project signals PR-required (e.g., `merge_strategy='pr_required'` once exposed, or explicit owner instruction), open PR + run review + merge.
+- When in doubt, ask the owner. Default ITIL4 sequence is for production changes, not development iteration.
+
+This rule was added after the runtime hotfix work where PR + review was orchestrated when the project actually uses direct-merge — wasted orchestration effort.
+
+### 4.7 Contract analysis
 
 When assigned to a contract (`POST /api/contracts/{id}/analyze`):
 1. Pulls attachment URLs into the description (PDF/DOCX/TXT)
@@ -265,6 +275,66 @@ This skill bundle ships with the following supporting files:
 - `agent-task-patterns.md` — Common task patterns (incident triage, change implementation, etc.)
 
 Reach for those when you need depth on a specific topic.
+
+## 9. Project Wiki — 6-Layer Append-Only Knowledge Base
+
+Every project has an **append-only 6-layer wiki** that is injected into the agent's context whenever an issue in that project is opened. Agents add new entries; old entries are never deleted — they are superseded (the new entry links back via `supersedes_entry_id`).
+
+### 9.1 The 6 Layers
+
+| # | Layer | Purpose |
+|---|---|---|
+| 1 | **Vision** | Why does the project exist? One-line + 1-2 paragraph context. |
+| 2 | **Domain** | Core concepts, entities, glossary. |
+| 3 | **Architecture** | Module map, junction relationships, architectural decisions. |
+| 4 | **API** | REST/RPC surface, header contracts, auth. |
+| 5 | **Runbook** | Operational flows (release, incident, freeze, etc). |
+| 6 | **Anti-patterns** | Pitfalls, lessons from past incidents. |
+
+### 9.2 Endpoints
+
+```
+GET    /api/projects/empty-wiki                          → projects with no wiki entries yet
+GET    /api/projects/{id}/wiki                           → all entries grouped by layer
+GET    /api/projects/{id}/wiki/layer/{n}                 → current + supersede chain for one layer
+POST   /api/projects/{id}/wiki/entries                   → body: {layer, content_md, supersedes_entry_id?}
+POST   /api/projects/{id}/wiki/init                      → body: {agent_id?, mode: "analyze"|"manual"} → spawn analysis task
+PATCH  /api/projects/{id}/wiki/entries/{eid}/supersede   → flag entry as superseded
+```
+
+Agent writes authenticate via the standard `X-Agent-ID + X-Task-ID` cross-check; no extra project-level board policy applies (unlike `PUT /api/projects/{id}`).
+
+### 9.3 Trigger 1 — First Init (manual)
+
+Triggered from the desktop UI's **First Init** button (sits above "Plan what to work on next").
+1. UI lists projects with empty wikis via `GET /api/projects/empty-wiki`.
+2. User picks a project P.
+3. UI calls `POST /api/projects/{P}/wiki/init`.
+4. Backend checks `project.secrets.GITHUB_TOKEN`; if present, spawns an analysis task for an architecturally-savvy agent (Solution Architect by default).
+5. Agent checks out the repo, reads README/CLAUDE.md/migrations/handlers, and writes one entry per layer.
+
+### 9.4 Trigger 2 — Done Append (automatic)
+
+When an issue (or release) inside a project transitions to `done`:
+1. Backend emits `issue.status_changed` event.
+2. Autopilot `wiki-done-append` matches `to=done` and enqueues the **Wiki Keeper** agent.
+3. The Wiki Keeper reads the closed issue + diff + comments and decides which layer(s) need a new entry.
+4. New entries are appended via `POST /api/projects/{P}/wiki/entries`. If an entry replaces an outdated current entry, it must set `supersedes_entry_id`.
+
+### 9.5 Behavioural Rules for Agents
+
+- **Never delete an entry.** If a layer's current entry is wrong or outdated, write a new entry and set `supersedes_entry_id`. The audit trail stays intact.
+- **One layer per entry.** Don't cross-mix Domain + API in a single entry — the injector groups by layer.
+- **Concise, structured Markdown.** Bullet points and tables beat prose for context injection.
+- **Reference issues** with `[CAL-XXX](mention://issue/<id>)` so the wiki stays navigable.
+- **Done append is idempotent.** If the same issue is re-transitioned to `done`, the agent must check `trigger_source='done_append' AND source_issue_id` before writing a duplicate.
+
+### 9.6 Anti-Patterns
+
+- ❌ Editing an entry in place — append-only means append-only.
+- ❌ Writing a Done-append entry without naming the source issue in `content_md`.
+- ❌ Putting Anti-patterns content in the Runbook layer because "it felt operational".
+- ❌ Bypassing the supersede chain ("just write a new one and ignore the old") — context injection will then show both, confusing future agents.
 
 ---
 

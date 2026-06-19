@@ -127,6 +127,7 @@ body: { title?, description?, category? }
 
 Automatically flags `improvement_source.source_type='problem_rca'`; the team can then approve and turn it into a change.
 
+
 ### 4.6 Always check project settings before sequencing
 
 Before delegating or sequencing any multi-step work, **read `caliptic project get <id> --output json`** and honour the project's preferred workflow. Do NOT apply ITIL4 PR/CAB defaults uniformly — they apply to production `change_type='normal'`/`risk_level='high'+` only. For everyday development:
@@ -136,6 +137,19 @@ Before delegating or sequencing any multi-step work, **read `caliptic project ge
 - When in doubt, ask the owner. Default ITIL4 sequence is for production changes, not development iteration.
 
 This rule was added after the runtime hotfix work where PR + review was orchestrated when the project actually uses direct-merge — wasted orchestration effort.
+
+### 4.8 In_review handoff is mandatory
+
+When you move an issue to `in_review`, the SAME comment that records the status change **must** explicitly hand off to the next actor. No silent in_review.
+
+Required handoff forms:
+- **PR open → reviewer needed:** `[@Code Review Engineer](mention://agent/<id>) — PR <url>, please pass.`
+- **Spec/contract done → owner approve:** `[@<Owner name>](mention://member/<id>) — please confirm.`
+- **Direct-merge project (`merge_strategy='direct_merge'`):** skip in_review entirely; push to main → `done` with a summary comment.
+
+Without an explicit @mention to the next actor, in_review issues stall — empirically observed in [CAL-9](mention://issue/b3052cfa-48f4-4dc8-a620-b768b6466fcb), [CAL-14](mention://issue/3ca27837-b3bd-4893-a4d2-f3c715252740), [CAL-17](mention://issue/f1fa5ddb-32e3-4186-b99c-6f1cdbbe4647) which sat 13+ hours each.
+
+Dev Supervisor sweep protocol: at every user touchpoint, run `caliptic issue list --status in_review` and ping/close anything older than 4h.
 
 ### 4.7 Contract analysis
 
@@ -275,6 +289,8 @@ This skill bundle ships with the following supporting files:
 - `agent-task-patterns.md` — Common task patterns (incident triage, change implementation, etc.)
 
 Reach for those when you need depth on a specific topic.
+
+
 
 ## 9. Project Wiki — 6-Layer Append-Only Knowledge Base
 
